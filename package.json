@@ -10,6 +10,3 @@
     "object": "node"
   }
 }
-Response
-
-{"verdict":"allow","rev":5,"session":"mr9d6webryy","xml":"<doc op='0'><paragraph id='mr9d6webryy.20970' h='ed87f6ed' heading='2'>Fichier pa…</paragraph><paragraph id='.21005' h='a06e8d92'><text id='.21006'>Crée un fi…</text><text id='.21028'><code>package.json</code></text><text id='.21040'> à la raci…</text><text id='.21073'><code>server.js</code></text><text id='.21082'>, avec ce …</text></paragraph><codeBlock id='.21106' h='e896a525' language='json'>{\n  \"name\"…</codeBlock><paragraph id='.21300' h='50fce343' heading='2'>Arborescen…</paragraph><paragraph id='.21334' h='6ce4d9ab'><text id='.21335'>À la racin…</text><text id='.21358'><code>server.js</code></text><text id='.21367'> et </text><text id='.21371'><code>package.json</code></text><text id='.21383'>. Dans un …</text><text id='.21401'><code>public</code></text><text id='.21407'> : </text><text id='.21410'><code>index.html</code></text><text id='.21420'>.</text></paragraph><paragraph id='.21421' h='115e86d3' heading='2'>Réglages s…</paragraph><list id='.21441' h='8fe6c738' kind='bullet'><gap blocks='3'/></list></doc>","data":{"notices":[{"code":"written_not_proposed"}]}}
