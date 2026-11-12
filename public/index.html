@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poker entre amis</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0b3d2e; color: #fff; min-height: 100vh; }
+  .screen { max-width: 520px; margin: 0 auto; padding: 20px; }
+  h1 { text-align: center; margin: 24px 0; }
+  input, button { font-size: 18px; padding: 12px; border-radius: 10px; border: none; width: 100%; margin: 6px 0; }
+  input { background: #fff; color: #000; text-transform: none; }
+  button { background: #f2c230; color: #222; font-weight: 700; cursor: pointer; }
+  button.sec { background: #1f6b52; color: #fff; }
+  button:disabled { opacity: .4; }
+  .hidden { display: none; }
+  #table { background: #116b4f; border: 6px solid #5a3a1a; border-radius: 24px; padding: 14px; margin-bottom: 14px; text-align: center; }
+  #pot { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .cards { display: flex; gap: 6px; justify-content: center; min-height: 70px; margin: 6px 0; }
+  .card { width: 48px; height: 68px; background: #fff; color: #111; border-radius: 6px; display: flex; flex-direction: column;
+          align-items: center; justify-content: center; font-weight: 700; font-size: 18px; }
+  .card.red { color: #c0182d; }
+  .card.back { background: repeating-linear-gradient(45deg, #1a3c8a, #1a3c8a 6px, #2a54b8 6px, #2a54b8 12px); }
+  .card.empty { background: rgba(255,255,255,.12); }
+  #players { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+  .p { background: rgba(0,0,0,.28); border-radius: 12px; padding: 8px; font-size: 14px; }
+  .p.turn { outline: 3px solid #f2c230; }
+  .p.folded { opacity: .4; }
+  .p .cards { min-height: 0; }
+  .p .card { width: 30px; height: 42px; font-size: 12px; }
+  #msg { min-height: 24px; text-align: center; font-weight: 700; color: #f2c230; margin: 8px 0; }
+  #you { background: rgba(0,0,0,.35); border-radius: 14px; padding: 10px; text-align: center; }
+  #actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+  #raiseBox { display: flex; gap: 8px; margin-top: 8px; }
+  #raiseBox input { width: 50%; margin: 0; }
+  #raiseBox button { width: 50%; margin: 0; }
+  #err { color: #ffb4b4; text-align: center; min-height: 22px; }
+</style>
+</head>
+<body>
+
+<!-- Écran d'accueil -->
+<div id="home" class="screen">
+  <h1>♠️ Poker entre amis ♥️</h1>
+  <input id="name" placeholder="Ton prénom" maxlength="14">
+  <button id="btnCreate">Créer une table</button>
+  <input id="code" placeholder="Code de la table (4 lettres)" maxlength="4">
+  <button id="btnJoin" class="sec">Rejoindre une table</button>
+  <div id="err"></div>
+</div>
+
+<!-- Écran de jeu -->
+<div id="game" class="screen hidden">
+  <div id="lobby" class="hidden">
+    <h1>Table <span id="tcode"></span></h1>
+    <p style="text-align:center">Donne ce code à tes amis. Joueurs connectés :</p>
+    <div id="lobbyList" style="text-align:center;margin:12px 0;font-size:18px"></div>
+    <button id="btnStart" class="hidden">Lancer la partie</button>
+    <p id="waitHost" class="hidden" style="text-align:center">En attente du créateur de la table...</p>
+  </div>
+
+  <div id="play" class="hidden">
+    <div id="table">
+      <div id="pot"></div>
+      <div class="cards" id="board"></div>
+    </div>
+    <div id="msg"></div>
+    <div id="players"></div>
+    <div id="you">
+      <div id="youinfo"></div>
+      <div class="cards" id="myhand"></div>
+      <div id="controls" class="hidden">
+        <div id="actions">
+          <button id="bFold" class="sec">Se coucher</button>
+          <button id="bCheck">Parole</button>
+          <button id="bCall">Suivre</button>
+        </div>
+        <div id="raiseBox">
+          <input id="raiseAmt" type="number" inputmode="numeric" placeholder="Montant">
+          <button id="bRaise">Relancer</button>
+        </div>
+      </div>
+      <button id="btnNext" class="hidden">Main suivante</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const $ = id => document.getElementById(id);
+let S = null;
+
+$('btnCreate').onclick = () => {
+  const name = $('name').value.trim();
+  if (!name) return $('err').textContent = 'Entre ton prénom';
+  socket.emit('create', name);
+};
+$('btnJoin').onclick = () => {
+  const name = $('name').value.trim();
+  const code = $('code').value.trim().toUpperCase();
+  if (!name || code.length !== 4) return $('err').textContent = 'Prénom et code à 4 lettres';
+  socket.emit('join', { code, name });
+};
+$('btnStart').onclick = () => socket.emit('start');
+$('btnNext').onclick = () => socket.emit('next');
+$('bFold').onclick = () => socket.emit('action', { type: 'fold' });
+$('bCheck').onclick = () => socket.emit('action', { type: 'check' });
+$('bCall').onclick = () => socket.emit('action', { type: 'call' });
+$('bRaise').onclick = () => socket.emit('action', { type: 'raise', amount: $('raiseAmt').value });
+socket.on('error-msg', m => $('err').textContent = m);
+
+function cardEl(c) {
+  const d = document.createElement('div');
+  if (!c) { d.className = 'card back'; return d; }
+  d.className = 'card' + (c.s === '♥' || c.s === '♦' ? ' red' : '');
+  d.innerHTML = '<span>' + c.label + '</span><span>' + c.s + '</span>';
+  return d;
+}
+function fill(el, cards, slots) {
+  el.innerHTML = '';
+  cards.forEach(c => el.appendChild(cardEl(c)));
+  for (let i = cards.length; i < (slots || 0); i++) {
+    const e = document.createElement('div'); e.className = 'card empty'; el.appendChild(e);
+  }
+}
+
+socket.on('state', s => {
+  S = s;
+  $('home').classList.add('hidden');
+  $('game').classList.remove('hidden');
+  const me = s.players.find(p => p.isYou);
+
+  if (s.phase === 'lobby') {
+    $('lobby').classList.remove('hidden'); $('play').classList.add('hidden');
+    $('tcode').textContent = s.code;
+    $('lobbyList').innerHTML = s.players.map(p => p.name).join('<br>');
+    const isHost = s.host === me.id;
+    $('btnStart').classList.toggle('hidden', !isHost);
+    $('btnStart').disabled = s.players.length < 2;
+    $('waitHost').classList.toggle('hidden', isHost);
+    return;
+  }
+
+  $('lobby').classList.add('hidden'); $('play').classList.remove('hidden');
+  $('pot').textContent = 'Pot : ' + s.pot + ' jetons';
+  fill($('board'), s.board, 5);
+  $('msg').textContent = s.phase === 'over' ? 'Partie terminée !' : (s.message || '');
+
+  $('players').innerHTML = '';
+  s.players.forEach((p, i) => {
+    if (p.isYou) return;
+    const d = document.createElement('div');
+    d.className = 'p' + (i === s.turn ? ' turn' : '') + (p.folded ? ' folded' : '');
+    d.innerHTML = '<b>' + (i === s.dealer ? '🔘 ' : '') + p.name + '</b><br>' + p.chips + ' jetons' +
+      (p.bet ? '<br>mise : ' + p.bet : '') + (p.allIn ? '<br>TAPIS' : '') + (p.folded ? '<br>couché' : '');
+    const cs = document.createElement('div'); cs.className = 'cards';
+    if (!p.folded && s.phase !== 'lobby') fill(cs, p.hand ? p.hand : [null, null]);
+    d.appendChild(cs);
+    $('players').appendChild(d);
+  });
+
+  $('youinfo').innerHTML = '<b>' + me.name + '</b> — ' + me.chips + ' jetons' +
+    (me.bet ? ' (mise : ' + me.bet + ')' : '') + (me.folded ? ' — couché' : '');
+  fill($('myhand'), me.hand || []);
+
+  const myTurn = s.players[s.turn] && s.players[s.turn].isYou;
+  $('controls').classList.toggle('hidden', !myTurn);
+  if (myTurn) {
+    const toCall = s.currentBet - me.bet;
+    $('bCheck').disabled = toCall > 0;
+    $('bCall').disabled = toCall <= 0;
+    $('bCall').textContent = toCall > 0 ? 'Suivre (' + Math.min(toCall, me.chips) + ')' : 'Suivre';
+    $('raiseAmt').placeholder = 'Total ≥ ' + (s.currentBet + s.minRaise);
+  }
+  const showNext = s.phase === 'showdown' && s.host === me.id;
+  $('btnNext').classList.toggle('hidden', !showNext);
+});
+</script>
+</body>
+</html>
