@@ -1,12 +1,12 @@
 {
-  "container": {
-    "id": "e37140e3-28da-462b-b25e-0a43752326cd",
-    "kind": "project"
+  "name": "poker",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
   },
-  "engine": "prose",
-  "payload": "{\"ops\": [{\"op\": \"insert\", \"target\": {\"kind\": \"root\"}, \"side\": \"end\", \"source\": {\"as\": \"markdown\", \"from\": {\"kind\": \"inline\", \"content\": \"## Fichier package.json : pour Render\\n\\nCrée un fichier nommé `package.json` à la racine du dépôt, à côté de `server.js`, avec ce contenu exact.\\n\\n```json\\n{\\n  \\\"name\\\": \\\"poker\\\",\\n  \\\"version\\\": \\\"1.0.0\\\",\\n  \\\"main\\\": \\\"server.js\\\",\\n  \\\"scripts\\\": {\\n    \\\"start\\\": \\\"node server.js\\\"\\n  },\\n  \\\"dependencies\\\": {\\n    \\\"express\\\": \\\"^4.19.2\\\",\\n    \\\"socket.io\\\": \\\"^4.7.5\\\"\\n  }\\n}\\n```\\n\\n## Arborescence à envoyer sur GitHub\\n\\nÀ la racine du dépôt : `server.js` et `package.json`. Dans un dossier `public` : `index.html`.\\n\\n## Réglages sur Render\\n\\n- Type : Web Service, instance Free\\n- Build Command : `npm install`\\n- Start Command : `node server.js`\\n\"}}}]}",
-  "ref": {
-    "id": "15523b3a-255f",
-    "object": "node"
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
   }
 }
