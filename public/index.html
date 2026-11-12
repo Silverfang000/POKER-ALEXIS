@@ -87,3 +87,285 @@
   #endBox { text-align: center; padding: 20px; }
 </style>
 </head>
+<body>
+<button id="sound" title="Son">🔊</button>
+
+<div id="home" class="screen">
+  <h1>♠️ Poker entre amis ♥️</h1>
+  <input id="name" placeholder="Ton prénom" maxlength="14">
+  <button id="btnCreate" class="btn green">Créer une table</button>
+  <input id="code" placeholder="Code de la table" maxlength="4">
+  <button id="btnJoin" class="btn blue">Rejoindre une table</button>
+  <div id="err"></div>
+</div>
+
+<div id="game" class="screen hidden">
+  <div id="lobby" class="hidden">
+    <h1>Table <span id="tcode"></span></h1>
+    <p style="text-align:center">Donne ce code à tes amis. Joueurs connectés :</p>
+    <div id="lobbyList" style="text-align:center;margin:14px 0;font-size:20px;font-weight:700"></div>
+    <button id="btnStart" class="btn green hidden">Lancer la partie</button>
+    <p id="waitHost" class="hidden" style="text-align:center">En attente du créateur de la table...</p>
+  </div>
+
+  <div id="play" class="hidden">
+    <div id="felt">
+      <div id="pot"><span class="chip gold"></span><span id="potTxt"></span></div>
+      <div class="cards" id="board"></div>
+    </div>
+    <div id="msg"></div>
+    <div id="players"></div>
+    <div id="you">
+      <div id="youinfo" style="font-weight:800"></div>
+      <div class="cards" id="myhand"></div>
+      <div id="live" class="hidden"></div>
+      <div id="controls" class="hidden">
+        <div id="actions">
+          <button id="bFold" class="btn red">Se coucher</button>
+          <button id="bCheck" class="btn blue">Parole</button>
+          <button id="bCall" class="btn green">Suivre</button>
+        </div>
+        <div id="raiseBox">
+          <input id="raiseAmt" type="number" inputmode="numeric" placeholder="Montant">
+          <button id="bRaise" class="btn">Relancer</button>
+        </div>
+        <div id="quick">
+          <button class="btn blue" data-q="min">Min</button>
+          <button class="btn blue" data-q="half">½ pot</button>
+          <button class="btn blue" data-q="pot">Pot</button>
+          <button class="btn red" data-q="all">Tapis</button>
+        </div>
+      </div>
+      <button id="btnNext" class="btn green hidden">Main suivante</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const $ = id => document.getElementById(id);
+const COLORS = ['#e8505b', '#3b8eea', '#f2a900', '#7b61ff', '#27ae60', '#e67e22', '#16a0a0', '#d63aa0'];
+let S = null, prev = null, soundOn = true, audioCtx = null;
+
+/* Identifiant gardé dans le navigateur : permet de revenir à sa place après un rechargement */
+let pid = localStorage.getItem('pokerPid');
+if (!pid) { pid = 'p' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('pokerPid', pid); }
+
+/* ---------- Sons générés dans le navigateur ---------- */
+function ctx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol, delay, slideTo) {
+  if (!soundOn) return;
+  const c = ctx(), t = c.currentTime + (delay || 0);
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(vol || .15, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur);
+}
+function noise(dur, vol, delay) {
+  if (!soundOn) return;
+  const c = ctx(), t = c.currentTime + (delay || 0);
+  const buf = c.createBuffer(1, Math.floor(c.sampleRate * dur), c.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const s = c.createBufferSource(), g = c.createGain(), f = c.createBiquadFilter();
+  f.type = 'highpass'; f.frequency.value = 2500; s.buffer = buf; g.gain.value = vol || .2;
+  s.connect(f); f.connect(g); g.connect(c.destination); s.start(t);
+}
+const sfx = {
+  card: () => noise(.08, .25),
+  deal: () => { noise(.08, .25); noise(.08, .25, .15); },
+  chip: () => { tone(1800, .06, 'square', .08); tone(2400, .05, 'square', .06, .05); },
+  check: () => { tone(220, .07, 'sine', .25); tone(200, .07, 'sine', .2, .1); },
+  fold: () => tone(300, .25, 'triangle', .15, 0, 90),
+  turn: () => { tone(660, .12, 'sine', .15); tone(880, .15, 'sine', .15, .12); },
+  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .25, 'triangle', .18, i * .12)),
+  lose: () => { tone(300, .3, 'sawtooth', .1); tone(220, .4, 'sawtooth', .1, .25); }
+};
+$('sound').onclick = () => { soundOn = !soundOn; $('sound').textContent = soundOn ? '🔊' : '🔇'; if (soundOn) sfx.chip(); };
+
+/* ---------- Boutons ---------- */
+$('btnCreate').onclick = () => {
+  ctx();
+  const name = $('name').value.trim();
+  if (!name) return $('err').textContent = 'Entre ton prénom';
+  localStorage.setItem('pokerName', name);
+  socket.emit('create', { name, pid });
+};
+$('btnJoin').onclick = () => {
+  ctx();
+  const name = $('name').value.trim(), code = $('code').value.trim().toUpperCase();
+  if (!name || code.length !== 4) return $('err').textContent = 'Prénom et code à 4 lettres';
+  localStorage.setItem('pokerName', name); localStorage.setItem('pokerCode', code);
+  socket.emit('join', { code, name, pid });
+};
+$('btnStart').onclick = () => socket.emit('start');
+$('btnNext').onclick = () => socket.emit('next');
+$('bFold').onclick = () => { sfx.fold(); socket.emit('action', { type: 'fold' }); };
+$('bCheck').onclick = () => { sfx.check(); socket.emit('action', { type: 'check' }); };
+$('bCall').onclick = () => { sfx.chip(); socket.emit('action', { type: 'call' }); };
+$('bRaise').onclick = () => { sfx.chip(); socket.emit('action', { type: 'raise', amount: $('raiseAmt').value }); };
+document.querySelectorAll('#quick .btn').forEach(b => b.onclick = () => {
+  if (!S) return;
+  const me = S.players.find(p => p.isYou), q = b.dataset.q;
+  const minTotal = S.currentBet + S.minRaise, maxTotal = me.bet + me.chips;
+  let v = minTotal;
+  if (q === 'half') v = S.currentBet + Math.floor(S.pot / 2);
+  if (q === 'pot') v = S.currentBet + S.pot;
+  if (q === 'all') v = maxTotal;
+  $('raiseAmt').value = Math.min(Math.max(v, minTotal), maxTotal);
+});
+socket.on('error-msg', m => { $('err').textContent = m; });
+
+/* Reconnexion automatique si la connexion saute (téléphone verrouillé, wifi qui coupe) */
+socket.on('connect', () => {
+  const code = localStorage.getItem('pokerCode'), name = localStorage.getItem('pokerName');
+  if (S && S.code) socket.emit('join', { code: S.code, name: name || 'Joueur', pid });
+});
+
+/* ---------- Cartes ---------- */
+function cardEl(c, anim) {
+  const d = document.createElement('div');
+  d.className = 'card ' + (c ? 'faceup' : 'facedown') + (anim ? ' ' + anim : '');
+  const red = c && (c.s === '♥' || c.s === '♦');
+  d.innerHTML = '<div class="face' + (red ? ' red' : '') + '">' +
+    (c ? '<span>' + c.label + '</span><span>' + c.s + '</span>' : '') + '</div><div class="back"></div>';
+  return d;
+}
+function fillCards(el, cards, slots, animFrom, animName) {
+  el.innerHTML = '';
+  cards.forEach((c, i) => el.appendChild(cardEl(c, animFrom !== null && i >= animFrom ? animName : '')));
+  for (let i = cards.length; i < (slots || 0); i++) {
+    const e = document.createElement('div'); e.className = 'card empty'; el.appendChild(e);
+  }
+}
+
+/* ---------- Jetons qui volent vers le gagnant ---------- */
+function flyChips(fromEl, toEl) {
+  if (!fromEl || !toEl) return;
+  const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+  for (let i = 0; i < 10; i++) {
+    const c = document.createElement('div'); c.className = 'flychip';
+    c.style.left = (a.left + a.width / 2 - 10 + (Math.random() * 40 - 20)) + 'px';
+    c.style.top = (a.top + a.height / 2 - 10 + (Math.random() * 20 - 10)) + 'px';
+    document.body.appendChild(c);
+    setTimeout(() => {
+      c.style.transform = 'translate(' + (b.left + b.width / 2 - a.left - a.width / 2) + 'px,' + (b.top + b.height / 2 - a.top - a.height / 2) + 'px)';
+      c.style.opacity = '.2'; sfx.chip();
+    }, 60 + i * 70);
+    setTimeout(() => c.remove(), 1300 + i * 70);
+  }
+}
+
+/* ---------- Réception de l'état du jeu ---------- */
+socket.on('state', s => {
+  const old = prev; S = s; prev = JSON.parse(JSON.stringify(s));
+  $('home').classList.add('hidden'); $('game').classList.remove('hidden');
+  const me = s.players.find(p => p.isYou);
+  if (!me) return;
+  const isHost = s.hostPid === s.youPid;
+
+  if (s.phase === 'lobby') {
+    $('lobby').classList.remove('hidden'); $('play').classList.add('hidden');
+    $('tcode').textContent = s.code;
+    $('lobbyList').innerHTML = s.players.map(p => p.name).join('<br>');
+    $('btnStart').classList.toggle('hidden', !isHost);
+    $('btnStart').disabled = s.players.length < 2;
+    $('waitHost').classList.toggle('hidden', isHost);
+    if (old && s.players.length > old.players.length) sfx.chip();
+    return;
+  }
+  $('lobby').classList.add('hidden'); $('play').classList.remove('hidden');
+
+  const newHand = !old || old.handNo !== s.handNo;
+  const oldBoard = old && !newHand ? old.board.length : 0;
+
+  $('potTxt').textContent = ' ' + s.pot + ' jetons';
+  if (old && old.pot !== s.pot && !newHand) sfx.chip();
+
+  fillCards($('board'), s.board, 5, s.board.length > oldBoard ? oldBoard : null, 'flip');
+  if (s.board.length > oldBoard) {
+    sfx.card();
+    if (s.board.length - oldBoard > 1) { setTimeout(sfx.card, 120); setTimeout(sfx.card, 240); }
+  }
+
+  const txt = s.message || '';
+  if ($('msg').textContent !== txt) {
+    $('msg').textContent = txt; $('msg').classList.remove('pop'); void $('msg').offsetWidth; $('msg').classList.add('pop');
+  }
+
+  const winners = (s.results && s.results.winners) || [];
+  const showdown = s.phase === 'showdown';
+  let firstWinnerEl = null;
+
+  $('players').innerHTML = '';
+  s.players.forEach((p, i) => {
+    if (p.isYou) return;
+    const d = document.createElement('div');
+    const isWinner = showdown && winners.includes(p.name);
+    d.className = 'p' + (i === s.turn ? ' turn' : '') + (p.folded ? ' folded' : '') + (p.out ? ' out' : '') +
+      (!p.connected ? ' offline' : '') + (isWinner ? ' winner' : '');
+    d.innerHTML = (i === s.dealer && !p.out ? '<div class="dealer">D</div>' : '') +
+      '<div class="avatar" style="background:' + COLORS[i % COLORS.length] + '">' + p.name.charAt(0).toUpperCase() + '</div>' +
+      '<b>' + p.name + '</b><br>' + p.chips + ' jetons' +
+      (p.bet ? '<br><span class="bet"><span class="chip blue"></span>' + p.bet + '</span>' : '') +
+      (p.allIn && !p.folded ? '<br><b style="color:#ffe27a">TAPIS</b>' : '') +
+      (p.folded ? '<br>couché' : '') + (p.out ? '<br>éliminé' : '') + (!p.connected && !p.out ? '<br>hors ligne' : '') +
+      (p.handLabel ? '<div class="hl">' + p.handLabel + '</div>' : '');
+    if (p.inHand && !p.folded) {
+      const cs = document.createElement('div'); cs.className = 'cards';
+      fillCards(cs, p.hand ? p.hand : [null, null], 0, newHand ? 0 : (p.hand && old && !old.players[i].hand ? 0 : null), newHand ? 'deal' : 'flip');
+      d.insertBefore(cs, d.querySelector('.hl'));
+    }
+    $('players').appendChild(d);
+    if (isWinner && !firstWinnerEl) firstWinnerEl = d;
+  });
+
+  const myIdx = s.players.findIndex(p => p.isYou);
+  const myTurn = s.turn === myIdx;
+  const iWon = showdown && winners.includes(me.name);
+  $('you').classList.toggle('turn', myTurn);
+  $('you').classList.toggle('winner', iWon);
+  $('youinfo').innerHTML = me.name + ' — ' + me.chips + ' jetons' +
+    (me.bet ? ' <span class="bet"><span class="chip blue"></span>' + me.bet + '</span>' : '') +
+    (me.folded ? ' — couché' : '') + (me.out ? ' — éliminé (tu regardes)' : '');
+  fillCards($('myhand'), me.hand || [], 0, newHand ? 0 : null, 'deal');
+  if (newHand && me.hand && me.hand.length) sfx.deal();
+  if (iWon && !firstWinnerEl) firstWinnerEl = $('you');
+
+  /* Badge de main en direct */
+  const live = $('live');
+  if (s.liveHand) {
+    if (live.textContent !== s.liveHand) { live.classList.remove('bump'); void live.offsetWidth; live.classList.add('bump'); }
+    live.textContent = s.liveHand; live.classList.remove('hidden');
+  } else { live.classList.add('hidden'); }
+
+  $('controls').classList.toggle('hidden', !myTurn);
+  if (myTurn) {
+    const toCall = s.currentBet - me.bet;
+    $('bCheck').disabled = toCall > 0; $('bCall').disabled = toCall <= 0;
+    $('bCall').textContent = toCall > 0 ? 'Suivre (' + Math.min(toCall, me.chips) + ')' : 'Suivre';
+    $('raiseAmt').placeholder = 'Total ≥ ' + Math.min(s.currentBet + s.minRaise, me.bet + me.chips);
+    if (!old || old.turn !== s.turn || newHand) sfx.turn();
+  }
+
+  const justEnded = showdown && (!old || old.phase !== 'showdown');
+  if (justEnded) {
+    if (iWon) sfx.win(); else sfx.lose();
+    if (firstWinnerEl) flyChips($('pot'), firstWinnerEl);
+  }
+  $('btnNext').textContent = 'Main suivante';
+  $('btnNext').classList.toggle('hidden', !(showdown && isHost));
+  if (s.phase === 'over') {
+    $('controls').classList.add('hidden'); $('btnNext').classList.add('hidden');
+    $('msg').textContent = s.message || 'Partie terminée !';
+  }
+});
+</script>
+</body>
+</html>
