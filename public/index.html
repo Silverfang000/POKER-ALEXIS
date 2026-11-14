@@ -63,6 +63,15 @@ h1{text-align:center;margin:22px 0 14px;font-size:30px;text-shadow:0 3px 0 #0006
 .scards{display:flex;justify-content:center;gap:2px;margin-top:-8px;min-height:34px;position:relative;z-index:1;perspective:500px}
 .sname{font-size:12px;font-weight:800;max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 2px #000}
 .schips{font-size:12px;font-weight:800;color:#ffe27a;text-shadow:0 1px 2px #000}
+.avatar.emo{font-size:20px;line-height:1}
+.emote{position:absolute;left:50%;top:-8px;font-size:38px;line-height:1;animation:emoteUp 2.2s ease-out forwards;pointer-events:none;z-index:15}
+@keyframes emoteUp{0%{transform:translate(-50%,0) scale(.3);opacity:0}15%{transform:translate(-50%,-10px) scale(1.25);opacity:1}100%{transform:translate(-50%,-64px) scale(1);opacity:0}}
+#emoteBar{position:fixed;top:56px;right:12px;display:grid;grid-template-columns:repeat(6,44px);gap:6px;padding:10px;background:#0c1a33f2;border:2px solid #ffffff30;border-radius:16px;z-index:35;box-shadow:0 8px 24px #000a}
+#emoteBar button{width:44px;height:44px;font-size:26px;border:none;border-radius:12px;background:#ffffff1a;cursor:pointer}
+#emoteBar button:active{transform:scale(.9)}
+#avatarPick{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:6px 0 10px}
+#avatarPick button{aspect-ratio:1;font-size:22px;border-radius:50%;border:3px solid transparent;background:#ffffff22;cursor:pointer}
+#avatarPick button.sel{border-color:#ffe27a;background:#ffe27a55;transform:scale(1.1)}
 .sbet{display:inline-block;background:#0007;border-radius:10px;padding:0 8px;font-size:12px;margin-top:2px}
 .sstat{font-size:11px;font-weight:800;color:#ffe27a;text-shadow:0 1px 2px #000}
 .dealer{position:absolute;top:-4px;left:6px;background:#fff;color:#000;width:20px;height:20px;border-radius:50%;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px #0008;z-index:3}
@@ -110,6 +119,8 @@ h1{text-align:center;margin:22px 0 14px;font-size:30px;text-shadow:0 3px 0 #0006
 <div id="home" class="screen">
   <h1>♠️ Poker entre amis ♥️</h1>
   <input id="name" class="field" placeholder="Ton prénom" maxlength="14">
+  <p class="center" style="margin-top:6px;font-weight:700">Choisis ton avatar</p>
+  <div id="avatarPick"></div>
   <button id="btnCreate" class="btn green">Créer une table</button>
   <input id="code" class="field" placeholder="Code de la table" maxlength="4">
   <button id="btnJoin" class="btn blue">Rejoindre une table</button>
@@ -121,6 +132,7 @@ h1{text-align:center;margin:22px 0 14px;font-size:30px;text-shadow:0 3px 0 #0006
     <button id="btnLeave" class="chipbtn" style="margin-left:0">✕ Quitter</button>
     <span id="tcodeBar"></span>
     <span>
+      <button id="btnEmote" class="chipbtn hidden">😀</button>
       <button id="btnChat" class="chipbtn">💬<span id="chatBadge" class="hidden">0</span></button>
       <button id="btnSound" class="chipbtn">🔊</button>
     </span>
@@ -159,6 +171,8 @@ h1{text-align:center;margin:22px 0 14px;font-size:30px;text-shadow:0 3px 0 #0006
     <p id="waitNext" class="center hidden" style="margin-top:8px">Le créateur de la table lance la main suivante...</p>
   </div>
 </div>
+
+<div id="emoteBar" class="hidden"></div>
 
 <div id="chatPanel" class="hidden">
   <div id="chatHead"><span>💬 Chat de la table</span><button id="chatClose" class="chipbtn">✕</button></div>
@@ -239,6 +253,27 @@ const sfx = {
   win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .25, 'triangle', .18, i * .12)),
   lose: () => { tone(300, .3, 'sawtooth', .08); tone(220, .4, 'sawtooth', .08, .25); }
 };
+const AVATARS = ['😎','🤠','🦊','🐼','🐯','🦁','🐸','🐵','🦄','🐙','🦉','🐺','🐲','🤖','👻','🎩'];
+const EMOTES = ['😂','😎','😡','😱','👏','🔥','🤔','😭','🤝','💀','🍀','🥳'];
+let myAvatar = localStorage.getItem('pokerAvatar');
+if (!AVATARS.includes(myAvatar)) myAvatar = AVATARS[0];
+(function buildPickers() {
+  const pick = $('avatarPick');
+  AVATARS.forEach(a => {
+    const b = el('button', a === myAvatar ? 'sel' : '', a);
+    b.onclick = () => {
+      myAvatar = a; localStorage.setItem('pokerAvatar', a);
+      pick.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b));
+      sfx.chip();
+    };
+    pick.appendChild(b);
+  });
+  EMOTES.forEach(e => {
+    const b = el('button', '', e);
+    b.onclick = () => { socket.emit('emote', e); $('emoteBar').classList.add('hidden'); };
+    $('emoteBar').appendChild(b);
+  });
+})();
 $('btnSound').onclick = () => { soundOn = !soundOn; $('btnSound').textContent = soundOn ? '🔊' : '🔇'; if (soundOn) sfx.chip(); };
 
 /* ---------- Accueil et salon ---------- */
@@ -247,14 +282,14 @@ $('btnCreate').onclick = () => {
   const name = $('name').value.trim();
   if (!name) { $('err').textContent = 'Entre ton prénom'; return; }
   localStorage.setItem('pokerName', name);
-  socket.emit('create', { name, pid });
+  socket.emit('create', { name, pid, avatar: myAvatar });
 };
 $('btnJoin').onclick = () => {
   ctx();
   const name = $('name').value.trim(), code = $('code').value.trim().toUpperCase();
   if (!name || code.length !== 4) { $('err').textContent = 'Prénom et code à 4 lettres'; return; }
   localStorage.setItem('pokerName', name);
-  socket.emit('join', { code, name, pid });
+  socket.emit('join', { code, name, pid, avatar: myAvatar });
 };
 $('btnStart').onclick = () => socket.emit('start');
 $('btnNext').onclick = () => socket.emit('next');
@@ -305,6 +340,7 @@ function leaveTable() {
   clearTable();
   $('chatLog').innerHTML = ''; unread = 0; updateBadge();
   $('chatPanel').classList.add('hidden');
+  $('btnEmote').classList.add('hidden'); $('emoteBar').classList.add('hidden');
   $('game').classList.add('hidden'); $('home').classList.remove('hidden');
   $('err').textContent = '';
 }
@@ -347,12 +383,19 @@ socket.on('chat', m => {
   addChat(m); showBubble(m);
   if ($('chatPanel').classList.contains('hidden') && m.pid !== pid) { unread++; updateBadge(); sfx.msg(); }
 });
+socket.on('emote', m => {
+  const o = seatEls[m.pid];
+  if (!o) return;
+  const e = el('div', 'emote', m.emoji);
+  o.root.appendChild(e); setTimeout(() => e.remove(), 2300); sfx.msg();
+});
+$('btnEmote').onclick = () => $('emoteBar').classList.toggle('hidden');
 socket.on('chatlog', list => { $('chatLog').innerHTML = ''; list.forEach(addChat); unread = 0; updateBadge(); });
 
 /* ---------- Connexion ---------- */
 socket.on('connect', () => {
   const code = (S && S.code) || localStorage.getItem('pokerCode'), name = localStorage.getItem('pokerName');
-  if (code && name) { autoJoin = !S; socket.emit('join', { code, name, pid }); }
+  if (code && name) { autoJoin = !S; socket.emit('join', { code, name, pid, avatar: myAvatar }); }
 });
 socket.on('error-msg', m => {
   localStorage.removeItem('pokerCode');
@@ -443,7 +486,8 @@ function renderSeats(s, old, newHand, justEnded, gains, animate) {
       (p.out ? ' out' : '') + (!p.connected ? ' offline' : '') + (isWinner ? ' winner' : '');
     if (isWinner) winners.push(o.root);
 
-    o.avatar.textContent = (p.name || '?').charAt(0).toUpperCase();
+    o.avatar.textContent = p.avatar || (p.name || '?').charAt(0).toUpperCase();
+    o.avatar.classList.toggle('emo', !!p.avatar);
     o.avatar.style.background = COLORS[i % COLORS.length];
     o.name.textContent = p.name;
     o.chips.textContent = '🪙 ' + p.chips;
@@ -507,13 +551,15 @@ socket.on('state', s => {
   const me = s.players.find(p => p.isYou);
   if (!me) return;
   const isHost = s.hostPid === s.youPid, animate = !!old;
+  $('btnEmote').classList.toggle('hidden', s.phase === 'lobby');
+  if (s.phase === 'lobby') $('emoteBar').classList.add('hidden');
 
   if (s.phase === 'lobby') {
     clearTable();
     $('lobby').classList.remove('hidden'); $('play').classList.add('hidden');
     $('tcode').textContent = s.code;
     const list = $('lobbyList'); list.innerHTML = '';
-    s.players.forEach(p => list.appendChild(el('div', '', (p.pid === s.hostPid ? '👑 ' : '') + p.name)));
+    s.players.forEach(p => list.appendChild(el('div', '', (p.pid === s.hostPid ? '👑 ' : '') + (p.avatar ? p.avatar + ' ' : '') + p.name)));
     $('btnStart').classList.toggle('hidden', !isHost);
     $('btnStart').disabled = s.players.length < 2;
     $('waitHost').classList.toggle('hidden', isHost);
