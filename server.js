@@ -11,6 +11,8 @@ const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'V', 'D', 'R', 'A'];
 const START_CHIPS = 1000, SMALL_BLIND = 10, MAX_PLAYERS = 8;
 const LIVE = ['preflop', 'flop', 'turn', 'river'];
+const AVATARS = ['😎', '🤠', '🦊', '🐼', '🐯', '🦁', '🐸', '🐵', '🦄', '🐙', '🦉', '🐺', '🐲', '🤖', '👻', '🎩'];
+const EMOTES = ['😂', '😎', '😡', '😱', '👏', '🔥', '🤔', '😭', '🤝', '💀', '🍀', '🥳'];
 
 function newDeck() {
   const deck = [];
@@ -113,11 +115,12 @@ function makeCode() {
   return c;
 }
 
-function newPlayer(pid, name, socketId) {
+function newPlayer(pid, name, socketId, avatar) {
   return {
     pid, socketId, name: String(name || '').trim().slice(0, 14) || 'Joueur',
+    avatar: AVATARS.includes(avatar) ? avatar : '',
     chips: START_CHIPS, bet: 0, totalBet: 0, hand: [], folded: false, allIn: false, inHand: false,
-    acted: false, connected: true, out: false, left: false, lastChat: 0
+    acted: false, connected: true, out: false, left: false, lastChat: 0, lastEmote: 0
   };
 }
 
@@ -292,7 +295,7 @@ function viewFor(t, pid) {
     players: t.players.map(p => {
       const h = reveal && p.inHand && !p.folded ? res.hands.find(x => x.pid === p.pid) : null;
       return {
-        pid: p.pid, name: p.name, chips: p.chips, bet: p.bet, folded: p.folded, allIn: p.allIn, out: p.out,
+        pid: p.pid, name: p.name, avatar: p.avatar, chips: p.chips, bet: p.bet, folded: p.folded, allIn: p.allIn, out: p.out,
         connected: p.connected, isYou: p.pid === pid, inHand: p.inHand,
         hand: (p.pid === pid || h) ? p.hand : null, handLabel: h ? h.label : ''
       };
@@ -360,7 +363,7 @@ io.on('connection', (socket) => {
     tableCode = null; myPid = null;
   }
 
-  socket.on('create', ({ name, pid } = {}) => {
+  socket.on('create', ({ name, pid, avatar } = {}) => {
     if (!pid) return;
     if (tableCode) leaveCurrent();
     const code = makeCode();
@@ -369,13 +372,13 @@ io.on('connection', (socket) => {
       currentBet: 0, minRaise: SMALL_BLIND * 2, message: '', results: null, handNo: 0, chat: [], champion: ''
     };
     tables[code] = t;
-    t.players.push(newPlayer(pid, name, socket.id));
+    t.players.push(newPlayer(pid, name, socket.id, avatar));
     tableCode = code; myPid = pid;
     socket.emit('chatlog', t.chat);
     broadcast(t);
   });
 
-  socket.on('join', ({ code, name, pid } = {}) => {
+  socket.on('join', ({ code, name, pid, avatar } = {}) => {
     if (!pid) return;
     const t = tables[String(code || '').toUpperCase()];
     if (!t) return socket.emit('error-msg', 'Table introuvable');
@@ -383,6 +386,7 @@ io.on('connection', (socket) => {
     const existing = t.players.find(p => p.pid === pid);
     if (existing) {
       existing.socketId = socket.id; existing.connected = true; existing.left = false;
+      if (AVATARS.includes(avatar)) existing.avatar = avatar;
       tableCode = t.code; myPid = pid;
       passHost(t);
       socket.emit('chatlog', t.chat);
@@ -390,7 +394,7 @@ io.on('connection', (socket) => {
     }
     if (t.phase !== 'lobby') return socket.emit('error-msg', 'La partie a déjà commencé');
     if (t.players.length >= MAX_PLAYERS) return socket.emit('error-msg', 'Table pleine (8 joueurs max)');
-    t.players.push(newPlayer(pid, name, socket.id));
+    t.players.push(newPlayer(pid, name, socket.id, avatar));
     tableCode = t.code; myPid = pid;
     socket.emit('chatlog', t.chat);
     broadcast(t);
@@ -440,6 +444,18 @@ io.on('connection', (socket) => {
     t.chat.push(msg);
     if (t.chat.length > 50) t.chat.shift();
     t.players.forEach(x => { if (x.connected && x.socketId) io.to(x.socketId).emit('chat', msg); });
+  });
+
+  /* Émotes : une réaction rapide qui s'affiche au-dessus du joueur */
+  socket.on('emote', (emoji) => {
+    const t = T();
+    if (!t || !EMOTES.includes(emoji)) return;
+    const p = t.players.find(x => x.pid === myPid);
+    if (!p) return;
+    const now = Date.now();
+    if (now - p.lastEmote < 1000) return;
+    p.lastEmote = now;
+    t.players.forEach(x => { if (x.connected && x.socketId) io.to(x.socketId).emit('emote', { pid: p.pid, emoji }); });
   });
 
   socket.on('action', ({ type, amount } = {}) => {
