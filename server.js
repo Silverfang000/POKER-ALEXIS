@@ -12,7 +12,7 @@ const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'V', 'D', 'R', 'A']
 const START_CHIPS = 1000, SMALL_BLIND = 10, MAX_PLAYERS = 8;
 const LIVE = ['preflop', 'flop', 'turn', 'river'];
 const AVATARS = ['😎', '🤠', '🦊', '🐼', '🐯', '🦁', '🐸', '🐵', '🦄', '🐙', '🦉', '🐺', '🐲', '🤖', '👻', '🎩'];
-const EMOTES = ['😂', '😎', '😡', '😱', '👏', '🔥', '🤔', '😭', '🤝', '💀', '🍀', '🥳'];
+const EMOTES = ['😂', '😎', '😡', '😱', '👏', '🔥', '🤔', '😭', '🤝', '💀', '🍀', '🥳','✌️','🤮','😈','💩'];
 
 function newDeck() {
   const deck = [];
